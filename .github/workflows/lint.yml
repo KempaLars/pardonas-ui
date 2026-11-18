@@ -1,0 +1,33 @@
+name: Lint
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Luacheck
+        uses: lunarmodules/luacheck@v1
+        with:
+          args: "."
+
+      # luacheck does not check Lua 5.1 compiler limits (200 locals, 60 upvalues per function);
+      # WoW uses Lua 5.1, so compile every own .lua file with luac5.1 (Libs/ excluded).
+      - name: Lua 5.1 compile check
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y lua5.1
+          find . -name '*.lua' -not -path './Libs/*' -not -path './.git/*' -not -path './.release/*' -print0 \
+            | xargs -0 -n1 luac5.1 -p

@@ -1,0 +1,13 @@
+package-as: PardonasUI
+
+enable-nolib-creation: no
+
+externals:
+  Libs/lib-pardona:
+    url: https://github.com/KempaLars/lib-pardona
+    tag: latest
+
+ignore:
+  - README.md
+  - .luacheckrc
+  - tools

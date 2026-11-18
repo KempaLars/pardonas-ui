@@ -1,0 +1,56 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+*'
+
+permissions:
+  contents: write
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Luacheck
+        uses: lunarmodules/luacheck@v1
+        with:
+          args: "."
+
+      # luacheck does not check Lua 5.1 compiler limits (200 locals, 60 upvalues per function);
+      # WoW uses Lua 5.1, so compile every own .lua file with luac5.1 (Libs/ excluded).
+      # The release job needs this job, so a failure here means no release.
+      - name: Lua 5.1 compile check
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y lua5.1
+          find . -name '*.lua' -not -path './Libs/*' -not -path './.git/*' -not -path './.release/*' -print0 \
+            | xargs -0 -n1 luac5.1 -p
+
+  release:
+    needs: lint
+    runs-on: ubuntu-latest
+
+    env:
+      CF_API_KEY: ${{ secrets.CF_API_KEY }}
+      GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Package and release
+        uses: BigWigsMods/packager@v2
+        with:
+          # File: PardonasUI-X.Y.Z.zip, CurseForge label: "X.Y.Z".
+          # The packager replaces spaces/apostrophes in the label with "_", so the label is
+          # just the version. It is set explicitly because the default label
+          # "{project-version}{classic}{nolib}" would append "-forever".
+          args: >-
+            -n "{package-name}-{project-version}:{project-version}"
