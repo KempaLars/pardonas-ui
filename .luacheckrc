@@ -7,6 +7,7 @@ exclude_files = { ".release", "Libs" }
 
 -- Globals the addon writes
 globals = {
+    "GetMinimapShape",
     "PardonasUIDB",
     "SLASH_PARDONASUI1",
     "SlashCmdList",
@@ -28,6 +29,7 @@ read_globals = {
     "GetBuildInfo",
     "geterrorhandler",
     "GetLocale",
+    "hooksecurefunc",
     "InCombatLockdown",
     "issecretvalue",
 }

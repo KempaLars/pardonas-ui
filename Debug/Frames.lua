@@ -9,7 +9,8 @@ local L = ns.L
 
 local MAX_REGIONS = 40
 local MAX_CHILDREN = 40
-local MAX_DEPTH = 2     -- 0 = Kandidat, 1 = Kinder, 2 = Enkel (deren Kinder nur Typ/Name)
+local MAX_DEPTH = 3     -- 0 = Kandidat, 1 = Kinder, 2 = Enkel, 3 = Urenkel (deren Kinder nur Typ/Name)
+local MAX_ELEMENTS = 3  -- Listenelemente des Beutefensters
 
 local ORDER = { "minimap", "auras", "loot", "grouploot", "trade" }
 
@@ -48,7 +49,7 @@ local CANDIDATES = {
 -- Gibt es diese Funktionen? (Ansatzpunkte für hooksecurefunc)
 local FUNCTIONS = {
     minimap   = { "GetMinimapShape", "Minimap.SetMaskTexture" },
-    auras     = { "BuffFrame.Update", "AuraButton_Update" },
+    auras     = { "BuffFrame.Update", "DebuffFrame.Update", "AuraButton_Update" },
     loot      = { "LootFrame_Update", "LootFrame.Update" },
     grouploot = { "GroupLootFrame_OnShow", "GroupLootContainer_Update" },
     trade     = { "TradeFrame_Update" },
@@ -95,15 +96,21 @@ end
 local function DescribeRegion(r)
     if ns.IsForbidden(r) then return { forbidden = "true" } end
     local layer, sublevel = Get(r, "GetDrawLayer")
-    return {
-        type     = Val((Get(r, "GetObjectType"))),
-        name     = Val((Get(r, "GetName"))),
-        layer    = Val(layer),
-        sublevel = Val(sublevel),
-        texture  = Val((Get(r, "GetTexture"))),
-        atlas    = Val((Get(r, "GetAtlas"))),
-        shown    = Val((Get(r, "IsShown"))),
+    local objType = Get(r, "GetObjectType")
+    local info = {
+        type      = Val(objType),
+        name      = Val((Get(r, "GetName"))),
+        parentKey = Val((Get(r, "GetParentKey"))),
+        layer     = Val(layer),
+        sublevel  = Val(sublevel),
+        texture   = Val((Get(r, "GetTexture"))),
+        atlas     = Val((Get(r, "GetAtlas"))),
+        shown     = Val((Get(r, "IsShown"))),
     }
+    if not ns.IsSecret(objType) and objType == "FontString" then
+        info.text = Val((Get(r, "GetText")))
+    end
+    return info
 end
 
 local function Describe(obj, depth)
@@ -111,6 +118,7 @@ local function Describe(obj, depth)
     local info = {
         type      = Val((Get(obj, "GetObjectType"))),
         name      = Val((Get(obj, "GetName"))),
+        parentKey = Val((Get(obj, "GetParentKey"))),
         protected = Val((Get(obj, "IsProtected"))),
         shown     = Val((Get(obj, "IsShown"))),
         width     = Val((Get(obj, "GetWidth"))),
@@ -143,14 +151,86 @@ local function Describe(obj, depth)
                 info.children[i] = { forbidden = "true" }
             else
                 info.children[i] = {
-                    type = Val((Get(child, "GetObjectType"))),
-                    name = Val((Get(child, "GetName"))),
+                    type      = Val((Get(child, "GetObjectType"))),
+                    name      = Val((Get(child, "GetName"))),
+                    parentKey = Val((Get(child, "GetParentKey"))),
                 }
             end
         end
     end
     return info
 end
+
+-- Element einer Liste (ab Tiefe 0) mit Feld "element"
+local function DescribeElement(obj, index)
+    local entry
+    if ns.IsForbidden(obj) then
+        entry = { forbidden = "true" }
+    elseif ns.IsUIObject(obj) then
+        entry = Describe(obj, 0)
+    else
+        entry = { value = Val(obj) }
+    end
+    entry.element = Val(index)
+    return entry
+end
+
+---------------------------------------------------------------------------
+-- Sonderfälle je Modul
+---------------------------------------------------------------------------
+-- Beutefenster: bis zu MAX_ELEMENTS Elemente der ScrollBox (GetFrames bzw. ForEachFrame)
+local function LootExtra()
+    local extra = { source = "none", elements = {} }
+    local box = ns.Resolve("LootFrame.ScrollBox")
+    if not ns.IsUIObject(box) then return extra end
+    local frames = {}
+    local list = Get(box, "GetFrames")
+    if not ns.IsSecret(list) and type(list) == "table" then
+        extra.source = "GetFrames"
+        for i = 1, math.min(#list, MAX_ELEMENTS) do frames[i] = list[i] end
+    else
+        local each = ns.GetField(box, "ForEachFrame")
+        if type(each) == "function" then
+            extra.source = "ForEachFrame"
+            pcall(each, box, function(frame)
+                if #frames < MAX_ELEMENTS then frames[#frames + 1] = frame end
+            end)
+        end
+    end
+    for i, frame in ipairs(frames) do extra.elements[i] = DescribeElement(frame, i) end
+    return extra
+end
+
+-- Gruppenbeute: alle Kinder von GroupLootContainer sowie GroupLootFrame1–4
+local function GroupLootExtra()
+    local extra = { containerChildren = {}, lootFrames = {} }
+    local container = ns.Resolve("GroupLootContainer")
+    if ns.IsUIObject(container) then
+        local children = GetList(container, "GetChildren") or {}
+        for i = 1, math.min(#children, MAX_CHILDREN) do
+            extra.containerChildren[i] = DescribeElement(children[i], i)
+        end
+    end
+    for i = 1, 4 do
+        local path = "GroupLootFrame" .. i
+        local obj = ns.Resolve(path)
+        local entry
+        if ns.IsUIObject(obj) then
+            entry = Describe(obj, 0)
+            entry.found = "true"
+        else
+            entry = { found = "false" }
+        end
+        entry.path = path
+        extra.lootFrames[i] = entry
+    end
+    return extra
+end
+
+local EXTRA = {
+    loot      = LootExtra,
+    grouploot = GroupLootExtra,
+}
 
 ---------------------------------------------------------------------------
 -- Analyse eines Moduls
@@ -162,7 +242,20 @@ local function Header()
         libMinor     = Val(ns.GetLibMinor()),
         styleAPI     = Val(ns.HasStyleAPI()),
         addonVersion = Val(ns.AddonVersion()),
+        -- Herkunft von GetMinimapShape: "own" (eigen), "foreign" (fremd), "none" (keine)
+        minimapShape = type(ns.MinimapShapeOrigin) == "function" and ns.MinimapShapeOrigin() or "none",
+        modules      = {},
+        styleResults = {},
     }
+    for _, key in ipairs(ns.moduleOrder) do
+        h.modules[key] = ns.GetModuleStatus(key)
+    end
+    -- Stil-Aufrufe mit Ergebnis "queued" / false
+    for module, list in pairs(ns.styleResults) do
+        local copy = {}
+        for label, result in pairs(list) do copy[label] = result end
+        h.styleResults[module] = copy
+    end
     if type(GetBuildInfo) == "function" then
         local ok, version, build, buildDate, toc = pcall(GetBuildInfo)
         if ok then
@@ -195,6 +288,7 @@ local function Analyse(key)
     for _, path in ipairs(FUNCTIONS[key]) do
         section.functions[path] = type(ns.Resolve(path))
     end
+    if EXTRA[key] then section.extra = EXTRA[key]() end
     return section, found, total
 end
 

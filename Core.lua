@@ -110,6 +110,28 @@ function ns.SafeRegisterEvent(frame, event, unit)
     return (pcall(frame.RegisterEvent, frame, event))
 end
 
+-- Ergebnisse der Stil-Aufrufe, die nicht true waren ("queued" / false), je Modul.
+-- Nur für die Frame-Analyse (/pui frames), nie im Chat.
+ns.styleResults = {}
+
+function ns.NoteStyleResult(module, label, result)
+    if type(module) ~= "string" or label == nil then return end
+    local list = ns.styleResults[module]
+    if result == true then
+        if list then list[tostring(label)] = nil end
+        return
+    end
+    if not list then
+        list = {}
+        ns.styleResults[module] = list
+    end
+    list[tostring(label)] = tostring(result)
+end
+
+function ns.ClearStyleResults(module)
+    ns.styleResults[module] = nil
+end
+
 ---------------------------------------------------------------------------
 -- LibPardona
 ---------------------------------------------------------------------------
