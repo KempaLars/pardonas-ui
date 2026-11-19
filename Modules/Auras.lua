@@ -49,10 +49,35 @@ local function DebuffColor(btn)
     return { r, g, b, a }, border
 end
 
+-- Objekttyp geschützt lesen; nil, wenn nicht lesbar oder secret
+local function ObjectType(obj)
+    if ns.IsSecret(obj) or type(obj) ~= "table" or ns.IsForbidden(obj) then return nil end
+    local ok, objType = Method(obj, "GetObjectType")
+    if not ok or ns.IsSecret(objType) or type(objType) ~= "string" then return nil end
+    return objType
+end
+
+-- Echter Aura-Button: Button mit Icon-Textur. Platzhalter für Private Auras (Frame, Icon
+-- ist ein Frame; Inhalt zeichnet der Client geschützt) und alles nicht Lesbare: false.
+local function IsAuraButton(btn)
+    if ObjectType(btn) ~= "Button" then return false end
+    return ObjectType(ns.GetField(btn, "Icon")) == "Texture"
+end
+
 local function StyleButton(btn, isDebuff, label)
-    if not ns.IsUIObject(btn) then return end
+    if not IsAuraButton(btn) then
+        -- früher gestaltet, jetzt kein Aura-Button mehr: Stil zurücknehmen
+        if styled[btn] ~= nil then
+            styled[btn] = nil
+            Call("RemoveStyle", btn)
+        end
+        return
+    end
+    -- Unsichtbare Buttons nicht neu aufbauen (ein vorhandener Stil ist mit ihnen unsichtbar)
+    local okShown, shown = Method(btn, "IsShown")
+    if not okShown or ns.IsSecret(shown) or shown ~= true then return end
     local icon = ns.GetField(btn, "Icon")
-    if ns.IsUIObject(icon) then
+    do
         local opts, look
         if isDebuff then
             local color, border = DebuffColor(btn)
