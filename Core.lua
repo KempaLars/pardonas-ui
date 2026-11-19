@@ -132,6 +132,56 @@ function ns.ClearStyleResults(module)
     ns.styleResults[module] = nil
 end
 
+-- Secret-Größe: GetWidth/GetHeight per pcall lesen. true, wenn einer der Werte ein Secret
+-- Value oder nicht lesbar ist. Es wird nichts verrechnet oder verglichen (nur type/issecretvalue).
+-- Hintergrund: Der Rahmen der Lib (BackdropTemplate) rechnet bei Größenänderung mit der Größe
+-- seines Ankers; ein Anker mit Secret-Größe führt zu einem Fehler in Backdrop.lua.
+local SIZE_METHODS = { "GetWidth", "GetHeight" }
+
+function ns.HasSecretSize(obj)
+    if ns.IsSecret(obj) or type(obj) ~= "table" then return true end
+    for _, method in ipairs(SIZE_METHODS) do
+        local fn = ns.GetField(obj, method)
+        if type(fn) ~= "function" then return true end
+        local ok, v = pcall(fn, obj)
+        if not ok or ns.IsSecret(v) or type(v) ~= "number" then return true end
+    end
+    return false
+end
+
+-- Funde von Secret-Größen je Modul und Label: { count, last, combat }.
+-- Nur für die Frame-Analyse (/pui frames) und die Zusammenfassung (/pui secret), nie im Chat
+-- als Einzelmeldung. Bleibt bis /reload erhalten (auch nach Modul aus/an).
+ns.secretSize = {}
+
+function ns.NoteSecretSize(module, label)
+    if type(module) ~= "string" or label == nil then return end
+    local list = ns.secretSize[module]
+    if not list then
+        list = {}
+        ns.secretSize[module] = list
+    end
+    local key = tostring(label)
+    local entry = list[key]
+    if not entry then
+        entry = { count = 0 }
+        list[key] = entry
+    end
+    entry.count = entry.count + 1
+    entry.last = type(date) == "function" and date("%Y-%m-%d %H:%M:%S") or nil
+    entry.combat = ns.InCombat()
+end
+
+-- Zusammenfassung je Modul: Anzahl der Labels und Summe der Funde
+function ns.SecretSizeSummary(module)
+    local objects, times = 0, 0
+    for _, entry in pairs(ns.secretSize[module] or {}) do
+        objects = objects + 1
+        times = times + entry.count
+    end
+    return objects, times
+end
+
 ---------------------------------------------------------------------------
 -- LibPardona
 ---------------------------------------------------------------------------
@@ -389,6 +439,13 @@ local function PrintHelp()
     for _, line in ipairs(L.HELP) do ns.Print(line) end
 end
 
+-- /pui secret: eine Zeile je Modul; Details nur über /pui frames
+local function PrintSecretSummary()
+    for _, key in ipairs(ns.moduleOrder) do
+        ns.Print(L.SECRET_LINE:format(key, ns.SecretSizeSummary(key)))
+    end
+end
+
 SLASH_PARDONASUI1 = "/pui"
 if type(SlashCmdList) == "table" then
     SlashCmdList.PARDONASUI = function(msg)
@@ -398,6 +455,8 @@ if type(SlashCmdList) == "table" then
             OpenOptions()
         elseif cmd == "frames" then
             if type(ns.RunFrameAnalysis) == "function" then ns.RunFrameAnalysis((rest or ""):lower()) end
+        elseif cmd == "secret" then
+            PrintSecretSummary()
         else
             PrintHelp()
         end

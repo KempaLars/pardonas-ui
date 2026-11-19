@@ -235,7 +235,7 @@ local EXTRA = {
 ---------------------------------------------------------------------------
 -- Analyse eines Moduls
 ---------------------------------------------------------------------------
-local function Header()
+local function Header(key)
     local h = {
         time         = type(date) == "function" and Val(date("%Y-%m-%d %H:%M:%S")) or nil,
         locale       = type(GetLocale) == "function" and Val(GetLocale()) or nil,
@@ -247,14 +247,19 @@ local function Header()
         modules      = {},
         styleResults = {},
     }
-    for _, key in ipairs(ns.moduleOrder) do
-        h.modules[key] = ns.GetModuleStatus(key)
+    for _, mod in ipairs(ns.moduleOrder) do
+        h.modules[mod] = ns.GetModuleStatus(mod)
     end
     -- Stil-Aufrufe mit Ergebnis "queued" / false
     for module, list in pairs(ns.styleResults) do
         local copy = {}
         for label, result in pairs(list) do copy[label] = result end
         h.styleResults[module] = copy
+    end
+    -- Secret-Größen dieses Moduls: { [label] = { count, last, combat } }
+    h.secretSize = {}
+    for label, entry in pairs(ns.secretSize[key] or {}) do
+        h.secretSize[label] = { count = entry.count, last = entry.last, combat = entry.combat }
     end
     if type(GetBuildInfo) == "function" then
         local ok, version, build, buildDate, toc = pcall(GetBuildInfo)
@@ -265,8 +270,35 @@ local function Header()
     return h
 end
 
+-- Gestaltete Objekte des Moduls (M.DebugObjects): Label, IsStyled, Secret-Größe von Objekt/Icon
+local function StyledObjects(key)
+    local def = ns.modules[key]
+    local fn = def and def.DebugObjects
+    if type(fn) ~= "function" then return nil end
+    local ok, list = pcall(fn)
+    if not ok or type(list) ~= "table" then return nil end
+    local LP = ns.LP
+    local isStyled = LP and ns.GetField(LP, "IsStyled")
+    local out = {}
+    for i, t in ipairs(list) do
+        local entry = { label = Val(t.label) }
+        if type(isStyled) == "function" then
+            local okStyled, variant, queued = pcall(isStyled, LP, t.obj)
+            if okStyled then
+                entry.isStyled = Val(variant) or "nil"
+                entry.queued = Val(queued)
+            end
+        end
+        entry.secretSize = Val(ns.HasSecretSize(t.obj))
+        if t.icon ~= nil then entry.iconSecretSize = Val(ns.HasSecretSize(t.icon)) end
+        out[i] = entry
+    end
+    return out
+end
+
 local function Analyse(key)
-    local section = { header = Header(), frames = {}, functions = {} }
+    local section = { header = Header(key), frames = {}, functions = {} }
+    section.styledObjects = StyledObjects(key)
     local found, total = 0, #CANDIDATES[key]
     for i, path in ipairs(CANDIDATES[key]) do
         local obj = ns.Resolve(path)

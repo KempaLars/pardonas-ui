@@ -64,13 +64,30 @@ local function IsAuraButton(btn)
     return ObjectType(ns.GetField(btn, "Icon")) == "Texture"
 end
 
+-- Stil eines Buttons zurücknehmen (auch die Dauer-Schrift, owner = btn)
+local function Unstyle(btn)
+    local wasStyled = styled[btn] ~= nil or Call("IsStyled", btn) ~= nil
+    styled[btn] = nil
+    if wasStyled then Call("RemoveStyle", btn) end
+end
+
+-- Button oder Icon mit Secret-Größe? Dann darf kein Lib-Rahmen daran hängen (Backdrop rechnet
+-- bei Größenänderung mit der Ankergröße). Wird bei jedem Durchlauf für jeden Button geprüft.
+local function HasSecretSize(btn)
+    return ns.HasSecretSize(btn) or ns.HasSecretSize(ns.GetField(btn, "Icon"))
+end
+
 local function StyleButton(btn, isDebuff, label)
     if not IsAuraButton(btn) then
         -- früher gestaltet, jetzt kein Aura-Button mehr: Stil zurücknehmen
-        if styled[btn] ~= nil then
-            styled[btn] = nil
-            Call("RemoveStyle", btn)
-        end
+        if styled[btn] ~= nil then Unstyle(btn) end
+        return
+    end
+    -- Secret-Größe (Button oder Icon): nicht gestalten bzw. Stil entfernen, Fund vermerken;
+    -- sobald die Größe wieder lesbar ist, gestaltet ein späterer Durchlauf neu.
+    if HasSecretSize(btn) then
+        Unstyle(btn)
+        ns.NoteSecretSize(MODULE, label)
         return
     end
     -- Unsichtbare Buttons nicht neu aufbauen (ein vorhandener Stil ist mit ihnen unsichtbar)
@@ -143,6 +160,23 @@ local M = {
     description = L.MOD_AURAS_DESC,
     tested      = false,
 }
+
+-- Für /pui frames auras: alle echten Aura-Buttons sowie gestaltete Einträge mit Label
+function M.DebugObjects()
+    local list = {}
+    for _, name in ipairs({ "BuffFrame", "DebuffFrame" }) do
+        local frames = ns.GetField(ns.Resolve(name), "auraFrames")
+        if not ns.IsSecret(frames) and type(frames) == "table" then
+            for i, btn in ipairs(frames) do
+                if IsAuraButton(btn) or styled[btn] ~= nil then
+                    list[#list + 1] = { label = name .. ".auraFrames." .. i, obj = btn,
+                        icon = ns.GetField(btn, "Icon") }
+                end
+            end
+        end
+    end
+    return list
+end
 
 function M.IsAvailable()
     return ns.HasFrame("BuffFrame", "DebuffFrame")

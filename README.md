@@ -36,6 +36,7 @@ The "Pardona's Addons" overview, the shared minimap button and the addon compart
 | --- | --- |
 | `/pui` | Open the settings page |
 | `/pui frames [minimap\|auras\|loot\|grouploot\|trade]` | Frame analysis of the default UI (all modules or one); written to the saved variables on `/reload` |
+| `/pui secret` | One line per module: how many frames were skipped because their size was a secret value, and how often (details via `/pui frames`) |
 | `/pui help` | List the commands |
 
 The frame analysis only reads frames and stores what it finds in `WTF\Account\<ACCOUNT>\SavedVariables\PardonasUI.lua`. Running it for one module replaces only that module's section, so e.g. `/pui frames trade` can be repeated with the trade window open.
@@ -44,6 +45,7 @@ The frame analysis only reads frames and stores what it finds in `WTF\Account\<A
 
 - Client: WoW Forever (Interface 16001).
 - The minimap module provides the global function `GetMinimapShape()` (returns `"SQUARE"` while the module is active, otherwise `"ROUND"`), so minimap buttons of LibDBIcon-1.0 and the Pardona minimap button sit on the square edge. It is only defined if no other addon has defined it before; an existing one is never replaced.
+- Frames whose size is a secret value (e.g. during combat) are skipped and restyled later.
 - Pardona's UI does not require any other UI, minimap or loot replacement addon, and it does not detect them. If another addon restyles or replaces the same frames, switch the matching module off.
 - A version notice is printed at login only for beta, alpha and developer versions.
 

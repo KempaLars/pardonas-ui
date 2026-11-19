@@ -60,9 +60,27 @@ local function Call(method, ...)
     return result
 end
 
+-- true, solange seit dem letzten ApplyAll ein Objekt wegen Secret-Größe übersprungen wurde
+local skipped = false
+
+-- Objekt (oder sein Icon) mit Secret-Größe? Dann darf kein Lib-Rahmen daran hängen (Backdrop
+-- rechnet bei Größenänderung mit der Ankergröße): vorhandenen Stil entfernen, Fund vermerken.
+-- Rückgabe: true = übersprungen.
+local function SkipSecret(label, obj)
+    if not ns.HasSecretSize(obj) then
+        local icon = ns.GetField(obj, "Icon")
+        if not ns.IsUIObject(icon) or not ns.HasSecretSize(icon) then return false end
+    end
+    if Call("IsStyled", obj) ~= nil then Call("RemoveStyle", obj) end
+    ns.NoteSecretSize(MODULE, label)
+    skipped = true
+    return true
+end
+
 -- Gestalten und Ergebnis für die Frame-Analyse vermerken ("queued"/false, nie im Chat)
 local function Apply(label, method, obj, ...)
     if not ns.IsUIObject(obj) then return end
+    if method ~= "StyleFontString" and SkipSecret(label, obj) then return end
     ns.NoteStyleResult(MODULE, label, Call(method, obj, ...))
 end
 
@@ -147,6 +165,7 @@ end
 ---------------------------------------------------------------------------
 -- Idempotent: die Lib aktualisiert vorhandene Stile, statt etwas doppelt anzulegen.
 local function ApplyAll()
+    skipped = false
     SetMask(MASK_SQUARE)
 
     local minimap = ns.Resolve("Minimap")
@@ -158,7 +177,8 @@ local function ApplyAll()
     })
 
     local zone = ns.Resolve("MinimapCluster.ZoneTextButton")
-    if ns.IsUIObject(zone) then
+    -- Zonenzeile mit Secret-Größe: auch den Zonennamen (owner = Zonenzeile) auslassen
+    if ns.IsUIObject(zone) and not SkipSecret("ZoneTextButton", zone) then
         Apply("ZoneTextButton", "ApplyStyle", zone, {
             variant = "thin", rounded = false, hide = CollectZoneTextures(zone),
         })
@@ -182,6 +202,25 @@ local function ApplyAll()
     RefreshButtons()
 end
 
+-- Gestaltete Objekte mit Label (Reihenfolge wie ApplyAll)
+local function Targets()
+    local list = {
+        { label = "Minimap", obj = ns.Resolve("Minimap") },
+        { label = "ZoneTextButton", obj = ns.Resolve("MinimapCluster.ZoneTextButton") },
+    }
+    for _, path in ipairs(SMALL_BUTTONS) do
+        list[#list + 1] = { label = path, obj = ns.Resolve(path) }
+    end
+    return list
+end
+
+-- Nur prüfen (z. B. bei Kampfbeginn): Objekte mit Secret-Größe verlieren ihren Stil
+local function CheckAll()
+    for _, t in ipairs(Targets()) do
+        if ns.IsUIObject(t.obj) then SkipSecret(t.label, t.obj) end
+    end
+end
+
 local function RemoveAll()
     Remove(ns.Resolve("Minimap"))
     Remove(ns.Resolve("MinimapCluster.ZoneTextButton"))      -- inkl. MinimapZoneText (owner)
@@ -202,6 +241,19 @@ local M = {
     description = L.MOD_MINIMAP_DESC,
     tested      = false,
 }
+
+-- Für /pui frames minimap: gestaltete Objekte mit Label und ggf. Icon
+function M.DebugObjects()
+    local list = {}
+    for _, t in ipairs(Targets()) do
+        if ns.IsUIObject(t.obj) then
+            local icon = ns.GetField(t.obj, "Icon")
+            if ns.IsUIObject(icon) then t.icon = icon end
+            list[#list + 1] = t
+        end
+    end
+    return list
+end
 
 function M.IsAvailable()
     return ns.HasFrame("Minimap")
@@ -225,12 +277,20 @@ function M.Disable()
     RefreshButtons()
 end
 
--- Nach Ladebildschirmen erneut anwenden (idempotent), solange das Modul aktiv ist
+-- Nach Ladebildschirmen erneut anwenden (idempotent), solange das Modul aktiv ist.
+-- Kampfbeginn: nur prüfen (Secret-Größe → Stil entfernen). Kampfende: prüfen bzw. neu
+-- anwenden, wenn seit dem letzten Anwenden etwas übersprungen wurde.
 local ev = CreateFrame("Frame")
 ns.SafeRegisterEvent(ev, "PLAYER_ENTERING_WORLD")
-ev:SetScript("OnEvent", function()
+ns.SafeRegisterEvent(ev, "PLAYER_REGEN_DISABLED")
+ns.SafeRegisterEvent(ev, "PLAYER_REGEN_ENABLED")
+ev:SetScript("OnEvent", function(self, event)
     if not active or not ns.IsModuleEnabled(MODULE) then return end
-    local ok, err = pcall(ApplyAll)
+    local fn = ApplyAll
+    if event == "PLAYER_REGEN_DISABLED" or (event == "PLAYER_REGEN_ENABLED" and not skipped) then
+        fn = CheckAll
+    end
+    local ok, err = pcall(fn)
     if not ok then ns.ReportError(err) end
 end)
 

@@ -46,10 +46,14 @@ local L = {
     FRAMES_UNKNOWN   = "Unknown module \"%s\". Possible: %s",
     FRAMES_NODB      = "Saved variables are not loaded yet.",
 
+    -- Secret-Größen (/pui secret)
+    SECRET_LINE      = "%s: %d objects, %d times",
+
     -- Hilfe
     HELP = {
         "/pui – open settings",
         "/pui frames [minimap|auras|loot|grouploot|trade] – frame analysis (saved on /reload)",
+        "/pui secret – frames skipped because of a secret size (details: /pui frames)",
         "/pui help – this help",
     },
 }
@@ -90,9 +94,12 @@ local deDE = {
     FRAMES_UNKNOWN   = "Unbekanntes Modul \"%s\". Möglich: %s",
     FRAMES_NODB      = "Gespeicherte Variablen sind noch nicht geladen.",
 
+    SECRET_LINE      = "%s: %d Objekte, %d-mal",
+
     HELP = {
         "/pui – Einstellungen öffnen",
         "/pui frames [minimap|auras|loot|grouploot|trade] – Frame-Analyse (wird bei /reload gespeichert)",
+        "/pui secret – wegen Secret-Größe übersprungene Frames (Details: /pui frames)",
         "/pui help – diese Hilfe",
     },
 }
